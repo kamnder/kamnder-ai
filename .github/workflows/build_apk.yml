@@ -19,7 +19,7 @@ jobs:
           channel: stable
 
       - name: Repair Android project with Flutter V2 embedding
-        run: flutter create . --platforms=android --project-name kamnder_ai --org com.kamnder --overwrite
+        run: flutter create . --platforms=android --project-name kamnder_ai --org com.kamnder
 
       - name: Flutter pub get
         run: flutter pub get
