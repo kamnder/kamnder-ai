@@ -18,8 +18,34 @@ jobs:
           flutter-version: '3.24.5'
           channel: stable
 
-      - name: Repair Android project with Flutter V2 embedding
-        run: flutter create . --platforms=android --project-name kamnder_ai --org com.kamnder
+      - name: Generate complete Android project safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/kamnder-backup
+          cp pubspec.yaml /tmp/kamnder-backup/pubspec.yaml
+          cp lib/main.dart /tmp/kamnder-backup/main.dart
+          cp lib/services/generation_service.dart /tmp/kamnder-backup/generation_service.dart
+          cp README.md /tmp/kamnder-backup/README.md
+          cp android/app/src/main/AndroidManifest.xml /tmp/kamnder-backup/AndroidManifest.xml
+
+          flutter create . --platforms=android --project-name kamnder_ai --org com.kamnder --overwrite
+
+          cp /tmp/kamnder-backup/pubspec.yaml pubspec.yaml
+          cp /tmp/kamnder-backup/main.dart lib/main.dart
+          mkdir -p lib/services
+          cp /tmp/kamnder-backup/generation_service.dart lib/services/generation_service.dart
+          cp /tmp/kamnder-backup/README.md README.md
+          cp /tmp/kamnder-backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+
+          test -f pubspec.yaml
+          test -f lib/main.dart
+          test -f lib/services/generation_service.dart
+          test -f android/app/build.gradle
+          test -f android/settings.gradle
+          test -f android/gradle/wrapper/gradle-wrapper.properties
+          grep -q "http:" pubspec.yaml
+          grep -q "android.permission.INTERNET" android/app/src/main/AndroidManifest.xml
 
       - name: Flutter pub get
         run: flutter pub get
@@ -30,8 +56,16 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: kamnder-ai-release
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
