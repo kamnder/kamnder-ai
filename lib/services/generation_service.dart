@@ -1,37 +1,109 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// Adapter for a remote open-source generation backend.
-/// The Android app never downloads or runs the large model locally.
 class GenerationService {
-  final String baseUrl;
+  const GenerationService({this.timeout = const Duration(minutes: 8)});
 
-  const GenerationService({required this.baseUrl});
+  final Duration timeout;
 
-  Future<Map<String, dynamic>> submit({
-    required String mode,
-    required String prompt,
-    String? imageUrl,
-    String model = 'Wan2.1',
-    String size = '1280x720',
-    int fps = 30,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/generate'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'mode': mode,
-        'prompt': prompt,
-        'image_url': imageUrl,
-        'model': model,
-        'size': size,
-        'fps': fps,
-      }),
-    );
+  static const _t2i = 'https://mrfakename-z-image-turbo.hf.space';
+  static const _t2v = 'https://multimodalart-wan2-1-fast.hf.space';
+  static const _i2v = 'https://multimodalart-wan2-1-fast-2.hf.space';
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Generation request failed: ${response.statusCode}');
+  Future<String> generate({required String mode, required String prompt, String? imageUrl}) async {
+    switch (mode) {
+      case 'text_to_image':
+        return _call(_t2i, 'generate_image', [prompt, 1024, 1024, 9, 42, true]);
+      case 'text_to_video':
+        return _call(_t2v, 'generate_video', [prompt, '', 480, 832, 25, 5.0, 4, 30]);
+      case 'image_to_video':
+        if (imageUrl == null || imageUrl.trim().isEmpty) {
+          throw Exception('أدخل رابط الصورة المصدر أولًا.');
+        }
+        return _call(_i2v, 'generate_video', [
+          {'path': imageUrl, 'meta': {'_type': 'gradio.FileData'}},
+          prompt,
+          480,
+          832,
+          '',
+          2,
+          1.0,
+          4,
+          42,
+          true,
+        ]);
+      default:
+        throw Exception('وضع التوليد غير مدعوم.');
     }
-    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<String> _call(String base, String endpoint, List<dynamic> data) async {
+    final start = await http.post(
+      Uri.parse('$base/gradio_api/call/$endpoint'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'data': data}),
+    ).timeout(timeout);
+
+    if (start.statusCode < 200 || start.statusCode >= 300) {
+      throw Exception('تعذر بدء التوليد (${start.statusCode}).');
+    }
+
+    final eventId = (jsonDecode(start.body) as Map<String, dynamic>)['event_id']?.toString();
+    if (eventId == null || eventId.isEmpty) {
+      throw Exception('لم يصل معرّف مهمة التوليد.');
+    }
+
+    final result = await http.get(
+      Uri.parse('$base/gradio_api/call/$endpoint/$eventId'),
+      headers: {'Accept': 'text/event-stream'},
+    ).timeout(timeout);
+
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw Exception('تعذر استلام نتيجة التوليد (${result.statusCode}).');
+    }
+
+    final lines = result.body.split('\n');
+    String? lastData;
+    String? error;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('event:') && lines[i].contains('error') && i + 1 < lines.length) {
+        error = lines[i + 1].replaceFirst('data:', '').trim();
+      }
+      if (lines[i].startsWith('event:') && lines[i].contains('complete') && i + 1 < lines.length) {
+        lastData = lines[i + 1].replaceFirst('data:', '').trim();
+      }
+    }
+
+    if (error != null && error.isNotEmpty) throw Exception('خطأ من محرك الذكاء الاصطناعي: $error');
+    if (lastData == null || lastData.isEmpty) throw Exception('لم تصل نتيجة من محرك الذكاء الاصطناعي.');
+
+    final decoded = jsonDecode(lastData);
+    final url = _findUrl(decoded);
+    if (url == null) throw Exception('وصلت النتيجة لكن لم أجد رابط الملف.');
+    return url;
+  }
+
+  String? _findUrl(dynamic value) {
+    if (value is String) {
+      if (value.startsWith('http://') || value.startsWith('https://')) return value;
+      return null;
+    }
+    if (value is List) {
+      for (final item in value) {
+        final found = _findUrl(item);
+        if (found != null) return found;
+      }
+    }
+    if (value is Map) {
+      for (final key in ['url', 'path']) {
+        final found = _findUrl(value[key]);
+        if (found != null) return found;
+      }
+      for (final item in value.values) {
+        final found = _findUrl(item);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 }
