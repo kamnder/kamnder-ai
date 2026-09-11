@@ -14,10 +14,7 @@ class KamnderAiApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF07070A),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF7C4DFF),
-          brightness: Brightness.dark,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7C4DFF), brightness: Brightness.dark),
         useMaterial3: true,
       ),
       home: const HomePage(),
@@ -29,50 +26,37 @@ class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
   void _open(BuildContext context, String mode, String title, IconData icon) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => GenerationPage(mode: mode, title: title, icon: icon),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => GenerationPage(mode: mode, title: title, icon: icon)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('KAMNDER AI', style: TextStyle(fontWeight: FontWeight.w800)),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('KAMNDER AI', style: TextStyle(fontWeight: FontWeight.w800)), centerTitle: true),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
             const SizedBox(height: 20),
-            const Text('Create with AI', textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+            const Text('Create with AI', textAlign: TextAlign.center, style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
-            Text('Turn your ideas into images and videos.', textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 16)),
+            Text('توليد صور وفيديوهات بالذكاء الاصطناعي', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade400, fontSize: 16)),
             const SizedBox(height: 32),
-            _CreateCard(icon: Icons.image_outlined, title: 'Text → Image',
-                subtitle: 'Create an image from your prompt',
-                onTap: () => _open(context, 'text_to_image', 'Text → Image', Icons.image_outlined)),
+            _CreateCard(icon: Icons.image_outlined, title: 'Text → Image', subtitle: 'توليد صورة من وصفك', onTap: () => _open(context, 'text_to_image', 'Text → Image', Icons.image_outlined)),
             const SizedBox(height: 14),
-            _CreateCard(icon: Icons.movie_creation_outlined, title: 'Text → Video',
-                subtitle: 'Create a cinematic video from text',
-                onTap: () => _open(context, 'text_to_video', 'Text → Video', Icons.movie_creation_outlined)),
+            _CreateCard(icon: Icons.movie_creation_outlined, title: 'Text → Video', subtitle: 'توليد فيديو من وصفك', onTap: () => _open(context, 'text_to_video', 'Text → Video', Icons.movie_creation_outlined)),
             const SizedBox(height: 14),
-            _CreateCard(icon: Icons.photo_camera_back_outlined, title: 'Image → Video',
-                subtitle: 'Animate an image with AI',
-                onTap: () => _open(context, 'image_to_video', 'Image → Video', Icons.photo_camera_back_outlined)),
-            const SizedBox(height: 32),
+            _CreateCard(icon: Icons.photo_camera_back_outlined, title: 'Image → Video', subtitle: 'تحريك صورة بالذكاء الاصطناعي', onTap: () => _open(context, 'image_to_video', 'Image → Video', Icons.photo_camera_back_outlined)),
+            const SizedBox(height: 28),
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white12)),
               child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Engine', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('محرك التوليد', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
-                Text('Open-source generation backend • Wan-ready'),
+                Text('Hugging Face ZeroGPU • Z-Image + Wan2.1'),
+                SizedBox(height: 5),
+                Text('مجاني بحدود حصة ZeroGPU اليومية.', style: TextStyle(color: Colors.white60)),
               ]),
             ),
           ],
@@ -87,7 +71,6 @@ class GenerationPage extends StatefulWidget {
   final String title;
   final IconData icon;
   const GenerationPage({super.key, required this.mode, required this.title, required this.icon});
-
   @override
   State<GenerationPage> createState() => _GenerationPageState();
 }
@@ -112,20 +95,20 @@ class _GenerationPageState extends State<GenerationPage> {
       setState(() => _error = 'اكتب وصفًا أولًا.');
       return;
     }
+    if (widget.mode == 'image_to_video' && _imageUrl.text.trim().isEmpty) {
+      setState(() => _error = 'أدخل رابط الصورة المصدر.');
+      return;
+    }
     setState(() { _loading = true; _error = null; _result = null; });
     try {
-      const baseUrl = String.fromEnvironment('GENERATION_API_URL', defaultValue: '');
-      if (baseUrl.isEmpty) {
-        throw Exception('لم يتم ربط خادم التوليد بعد.');
-      }
-      final result = await const GenerationService(baseUrl: baseUrl).submit(
+      final url = await const GenerationService().generate(
         mode: widget.mode,
         prompt: prompt,
         imageUrl: widget.mode == 'image_to_video' ? _imageUrl.text.trim() : null,
       );
-      setState(() => _result = result['output_url']?.toString() ?? result.toString());
+      if (mounted) setState(() => _result = url);
     } catch (e) {
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -133,7 +116,7 @@ class _GenerationPageState extends State<GenerationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final imageMode = widget.mode == 'text_to_image';
+    final isImage = widget.mode == 'text_to_image';
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: ListView(
@@ -145,8 +128,8 @@ class _GenerationPageState extends State<GenerationPage> {
             controller: _prompt,
             maxLines: 6,
             decoration: InputDecoration(
-              labelText: imageMode ? 'وصف الصورة' : 'وصف ما تريد توليده',
-              hintText: 'مثال: مدينة مستقبلية ليلًا بأسلوب سينمائي...',
+              labelText: isImage ? 'وصف الصورة' : 'وصف الفيديو',
+              hintText: 'مثال: مدينة مستقبلية ليلًا، إضاءة سينمائية، تفاصيل واقعية...',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             ),
           ),
@@ -160,6 +143,8 @@ class _GenerationPageState extends State<GenerationPage> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
               ),
             ),
+            const SizedBox(height: 8),
+            Text('يجب أن يكون الرابط متاحًا لمحرك Hugging Face.', style: TextStyle(color: Colors.grey.shade500)),
           ],
           const SizedBox(height: 18),
           FilledButton.icon(
@@ -172,12 +157,18 @@ class _GenerationPageState extends State<GenerationPage> {
             Text(_error!, style: const TextStyle(color: Colors.redAccent)),
           ],
           if (_result != null) ...[
-            const SizedBox(height: 18),
-            SelectableText('النتيجة:\n$_result'),
+            const SizedBox(height: 20),
+            if (isImage) Image.network(_result!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => SelectableText(_result!)),
+            if (!isImage) ...[
+              const Text('تم إنشاء الفيديو بنجاح:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              SelectableText(_result!),
+              const SizedBox(height: 8),
+              FilledButton.icon(onPressed: () {}, icon: const Icon(Icons.open_in_new), label: const Text('رابط الفيديو جاهز')),
+            ],
           ],
           const SizedBox(height: 24),
-          Text('الإخراج المستهدف للفيديو: 700p / 30 FPS عند دعم الخادم.',
-              style: TextStyle(color: Colors.grey.shade500)),
+          Text('الفيديو يستخدم إعدادات خفيفة مناسبة لـ ZeroGPU؛ يمكن رفع الدقة لاحقًا عند توفر موارد أقوى.', style: TextStyle(color: Colors.grey.shade500)),
         ],
       ),
     );
@@ -190,7 +181,6 @@ class _CreateCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
   const _CreateCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
-
   @override
   Widget build(BuildContext context) {
     return Card(
