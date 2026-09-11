@@ -1,4 +1,8 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+
 import 'services/generation_service.dart';
 
 void main() => runApp(const KamnderAiApp());
@@ -77,7 +81,8 @@ class GenerationPage extends StatefulWidget {
 
 class _GenerationPageState extends State<GenerationPage> {
   final _prompt = TextEditingController();
-  final _imageUrl = TextEditingController();
+  Uint8List? _imageBytes;
+  String _imageName = 'source.png';
   bool _loading = false;
   String? _result;
   String? _error;
@@ -85,8 +90,30 @@ class _GenerationPageState extends State<GenerationPage> {
   @override
   void dispose() {
     _prompt.dispose();
-    _imageUrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    setState(() => _error = null);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final file = picked.files.single;
+      if (file.bytes == null || file.bytes!.isEmpty) {
+        setState(() => _error = 'تعذر قراءة الصورة من الهاتف.');
+        return;
+      }
+      setState(() {
+        _imageBytes = file.bytes;
+        _imageName = file.name.isEmpty ? 'source.png' : file.name;
+        _result = null;
+      });
+    } catch (e) {
+      setState(() => _error = 'تعذر اختيار الصورة: $e');
+    }
   }
 
   Future<void> _generate() async {
@@ -95,8 +122,8 @@ class _GenerationPageState extends State<GenerationPage> {
       setState(() => _error = 'اكتب وصفًا أولًا.');
       return;
     }
-    if (widget.mode == 'image_to_video' && _imageUrl.text.trim().isEmpty) {
-      setState(() => _error = 'أدخل رابط الصورة المصدر.');
+    if (widget.mode == 'image_to_video' && (_imageBytes == null || _imageBytes!.isEmpty)) {
+      setState(() => _error = 'اختر صورة المصدر أولًا.');
       return;
     }
     setState(() { _loading = true; _error = null; _result = null; });
@@ -104,7 +131,8 @@ class _GenerationPageState extends State<GenerationPage> {
       final url = await const GenerationService().generate(
         mode: widget.mode,
         prompt: prompt,
-        imageUrl: widget.mode == 'image_to_video' ? _imageUrl.text.trim() : null,
+        imageBytes: _imageBytes,
+        imageName: _imageName,
       );
       if (mounted) setState(() => _result = url);
     } catch (e) {
@@ -117,6 +145,7 @@ class _GenerationPageState extends State<GenerationPage> {
   @override
   Widget build(BuildContext context) {
     final isImage = widget.mode == 'text_to_image';
+    final isI2V = widget.mode == 'image_to_video';
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: ListView(
@@ -133,18 +162,22 @@ class _GenerationPageState extends State<GenerationPage> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             ),
           ),
-          if (widget.mode == 'image_to_video') ...[
+          if (isI2V) ...[
             const SizedBox(height: 14),
-            TextField(
-              controller: _imageUrl,
-              decoration: InputDecoration(
-                labelText: 'رابط الصورة المصدر',
-                hintText: 'https://...',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              ),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _pickImage,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: Text(_imageBytes == null ? 'اختيار صورة من الهاتف' : 'تغيير الصورة'),
             ),
-            const SizedBox(height: 8),
-            Text('يجب أن يكون الرابط متاحًا لمحرك Hugging Face.', style: TextStyle(color: Colors.grey.shade500)),
+            if (_imageBytes != null) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.memory(_imageBytes!, height: 220, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 6),
+              Text(_imageName, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500)),
+            ],
           ],
           const SizedBox(height: 18),
           FilledButton.icon(
@@ -163,8 +196,6 @@ class _GenerationPageState extends State<GenerationPage> {
               const Text('تم إنشاء الفيديو بنجاح:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               SelectableText(_result!),
-              const SizedBox(height: 8),
-              FilledButton.icon(onPressed: () {}, icon: const Icon(Icons.open_in_new), label: const Text('رابط الفيديو جاهز')),
             ],
           ],
           const SizedBox(height: 24),
