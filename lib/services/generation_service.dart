@@ -51,9 +51,9 @@ class GenerationService {
       throw Exception('تعذر الوصول إلى خوادم Hugging Face من الشبكة الحالية.');
     }
 
-    final httpClient = HttpClient()
-      ..findProxy = (_) => 'DIRECT'
-      ..connectionTimeout = const Duration(seconds: 15);
+    final httpClient = HttpClient();
+    httpClient.findProxy = (_) => 'DIRECT';
+    httpClient.connectionTimeout = const Duration(seconds: 15);
 
     httpClient.connectionFactory = (requestUri, proxyHost, proxyPort) {
       if (proxyHost != null || proxyPort != null) {
